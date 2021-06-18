@@ -17,7 +17,7 @@ public class ClientHandler implements Runnable{
 
     // 玩家封包
     String msgFromClient;
-    private int status = 0;
+    int status = 1;
 
     // 玩家資料
     static int[] characterIndex = new int[6];       // 角色序 1~5
@@ -26,6 +26,12 @@ public class ClientHandler implements Runnable{
     private static int whoseRound=1;                // client 編號從 1 開始
     private static final int[] playerX = {1670,1670,1670,1670,1670,1670};     // 玩家座標陣列
     private static final int[] playerY = {1000,1000,1000,1000,1000,1000};
+    private static int[][] characterAbility = {{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0}};
+    // Might,Speed,Sanity,Knowledge
+    private static int[] die = {0,0,0,0,0,0};
+    int newPlateX, newPlateY, newPlateID;
+    boolean newPlate = false;
+
 
     // constructor
     public ClientHandler(int index,Socket connectionFormClient, ArrayList<ClientHandler> ClientList, int[] characterIndex) throws IOException {
@@ -36,9 +42,10 @@ public class ClientHandler implements Runnable{
         in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
         out = new PrintWriter(connection.getOutputStream(), true);
     }
+
     // 初始玩家封包
     public void Initialize(){
-        packet = "0"+ClientList.size();
+        packet = "0" + ClientList.size();
         for(int i = 1;i<=5;i++)
             packet += this.characterIndex[i];
         packet += index;
@@ -69,52 +76,81 @@ public class ClientHandler implements Runnable{
         }
     }
 
+    // handle players ability
+    public void addAbility(){
+        for(int i = 1;i<=5;i++){
+            packet += die[i]; // 生死狀況
+        }
+        for(int i = 1;i<=5;i++){
+            for(int j = 0; j < 4;j++){
+                packet+=characterAbility[i][j];
+            }
+        }
+    }
+    // handle plates
+    public void addPlate(){
+        if(newPlate){
+            packet += 1;
+            packet += String.format("%02d", newPlateX);
+            packet += String.format("%02d", newPlateY);
+            packet += String.format("%02d", newPlateID);
+            newPlate = false;
+        }
+        else packet += "0000000";
+    }
+
     @Override
     public void run() {
-
-        //out.println("[SERVER] Connection Established, Say Hello To Server");
-
         try{
             while (true) {
 
                 // get packet from client
                 msgFromClient = in.readLine();
-                if(msgFromClient.charAt(11) == '1')
-                    status = 1;
+                System.out.println("[CLIENT " + index + "] " + msgFromClient.replace("[CLIENT] ",""));
+
+                // update characterAbility
+                characterAbility[index][0] = msgFromClient.charAt(12) - '0'; // Might
+                characterAbility[index][1] = msgFromClient.charAt(13) - '0'; // Speed
+                characterAbility[index][2] = msgFromClient.charAt(14) - '0'; // Sanity
+                characterAbility[index][3] = msgFromClient.charAt(15) - '0'; // Knowledge
+
+                // fetch new open plate
+                if(msgFromClient.charAt(16) == '1') {
+                    newPlate = true;
+                    newPlateX = Integer.parseInt(msgFromClient.substring(17, 19));
+                    newPlateY = Integer.parseInt(msgFromClient.substring(19, 21));
+                    newPlateID = Integer.parseInt(msgFromClient.substring(21, 23));
+                }
 
                 // initialize "packet to client"
                 packet = "";
                 packet += status;
 
-                switch (status){
-                    case 0:
-                        packet += (char)ClientList.size();
-                        for(int a = 1;a<characterIndex.length;a++)
-                            packet += characterIndex[a];
-                        packet += index;
-                        break;
-                    case 1:
-                        addRound();
-                        addPlayersPosition();
-                        break;
+                if(status == 1) {
+                    addRound();
+                    addPlayersPosition();
+                    status = 2;
+                }else{
+                    addAbility();
+                    addPlate();
+                    status = 1;
                 }
-
-                System.out.println("[CLIENT " + index + "] " + msgFromClient.replace("[CLIENT] ",""));
-
-                // broadcast
-                outToAll();
+                outToAll();  // broadcast
             }
 
-        // don't really know whats going below
+            // catching exceptions & close stream writer
         }catch(IOException e){
             System.err.println("IOException in client handler");
             System.err.println(e.getStackTrace());
+            System.out.println("out : " + packet);
+            System.out.println("in : " + msgFromClient);
         }finally {
             out.close();
             try{
                 in.close();
             }catch (IOException e){
-                e.printStackTrace();
+                System.out.println("out : " + packet);
+                System.out.println("in : " + msgFromClient);
             }
         }
     }
@@ -122,10 +158,10 @@ public class ClientHandler implements Runnable{
     private void outToAll() {
         // let "aClient" travel through the list
         for (ClientHandler aClient : ClientList){
-
             // broadcast back
             aClient.out.println(packet);
         }
         System.out.println("[Client] Packet:"+packet);
+
     }
 }
