@@ -25,7 +25,7 @@ public class Server {
 
     // place to store various threads
     private static ArrayList<ClientHandler> clientList = new ArrayList<>();
-    private static ExecutorService pool = Executors.newFixedThreadPool(5);
+    private static ExecutorService pool = Executors.newFixedThreadPool(4);
 
     public static void main(String[] args) throws IOException {
 
