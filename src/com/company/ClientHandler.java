@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Scanner;
 
 public class ClientHandler implements Runnable{
 
@@ -29,6 +30,8 @@ public class ClientHandler implements Runnable{
     private static final int[] playerDie = {0,0,0,0,0,0};
     private static final int[][] playerAbility = {{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0}};
     private String plate = "";
+    private String cardNumber = "";
+    private String data = "";
 
     // constructor
     public ClientHandler(int index,Socket connectionFormClient, ArrayList<ClientHandler> ClientList, int[] characterIndex) throws IOException {
@@ -52,9 +55,11 @@ public class ClientHandler implements Runnable{
     public void addRound(){
         // 0 表示還沒
         if(msgFromClient.charAt(10) == '1'){
-            whoseRound++;
-            if(whoseRound > ClientList.size())
-                whoseRound = 1;  // 超過玩家數->從首位繼續
+            do{
+                whoseRound++;
+                if(whoseRound > ClientList.size())
+                    whoseRound = 1;  // 超過玩家數->從首位繼續
+            }while (playerDie[whoseRound] == 1);
         }
         packet += whoseRound;
     }
@@ -80,14 +85,14 @@ public class ClientHandler implements Runnable{
         playerAbility[index][3] = msgFromClient.charAt(15) - '0';
     }
 
-    // handle players die
+    // handle players' death
     public void addPlayersDie(){
         for(int i = 1 ; i<= 5;i++){
             packet += playerDie[i];
         }
     }
 
-    // handle players ability
+    // handle players' ability
     public void addPlayersAbility(){
         for(int i = 1 ; i <= 5;i++){
             for(int j = 0;j < 4 ;j++){
@@ -95,25 +100,43 @@ public class ClientHandler implements Runnable{
             }
         }
     }
+    class rescue extends Thread{
+        public void run(){
+            while (true){
+                Scanner scanner = new Scanner(System.in);
+                String s = scanner.nextLine();
+                if(s.equals("1")){
+                    packet = data;
+                    outToAll();
+                }
 
+            }
+
+        }
+    }
 
     @Override
     public void run() {
 
-        //out.println("[SERVER] Connection Established, Say Hello To Server");
-
+        rescue r = new rescue();
+        r.start();
         try{
             while (true) {
 
                 // get packet from client
                 msgFromClient = in.readLine();
-                System.out.println("[CLIENT " + index + "] " + msgFromClient.replace("[CLIENT] ",""));
 
                 updatePlayersAbility();
 
+                // roundOver
+                if(msgFromClient.charAt(10) == '1')
+                    status = 1;
                 // open new plate
                 if(msgFromClient.charAt(16) == '1')
                     status = 3;
+                // attack people
+                if(msgFromClient.charAt(46) != '0')
+                    status = 4;
 
                 // initialize "packet to client"
                 packet = "";
@@ -126,29 +149,36 @@ public class ClientHandler implements Runnable{
                         status = 2;  // next packet
                         break;
                     case 2:
-
                         addPlayersDie();
                         addPlayersAbility();
                         status = 1;
                         break;
                     case 3:
-                        plate = msgFromClient.substring(16, 46);   // 16~45
+                        plate = msgFromClient.substring(16, 46);   // 16~45 new plate position
+                        cardNumber = msgFromClient.substring(49, 57);  //  49~56 card number
                         packet += plate;
+                        packet += cardNumber;
                         status = 1;
                         break;
+                    case 4:
+                        packet += msgFromClient.substring(46, 49); // 46~48 attack
+                        status = 2;
+                        break;
                 }
-
+                data = packet;
                 // broadcast
                 outToAll();
             }
 
-        // don't really know whats going below
         }catch(IOException e){
+            outToAll();
             System.err.println("[IOException] IOException in client handler");
             System.err.println(e.getStackTrace());
         }catch (Exception e){
-           System.err.println("[Exception] "+e);
+            outToAll();
+            System.err.println("[Exception] "+e);
         } finally {
+            outToAll();
             out.close();
             try{
                 in.close();
